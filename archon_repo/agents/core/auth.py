@@ -78,6 +78,38 @@ def authenticate_user(username, password):
         if conn:
             conn.close()
 
+
+def get_privilege_by_id(user_id: int) -> str | None:
+    """
+    Helper function to get a user's privilege level from a user ID.
+    """
+    conn = db_manager.db_connect()
+    if not conn:
+        return None
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.privilege_name
+                FROM users u
+                JOIN privileges p ON u.privilege_id = p.privilege_id
+                WHERE u.user_id = %s;
+                """,
+                (user_id,)
+            )
+            result = cur.fetchone()
+            if result:
+                return result[0]
+            else:
+                return None
+    except Exception as e:
+        print(f"[AUTH ERROR] Failed to get privilege: {e}", file=sys.stderr)
+        return None
+    finally:
+        if conn:
+            conn.close()
+
 # ---
 # 2. ACTIVITY LOGGING (The "Ledger")
 # ---
