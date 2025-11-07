@@ -33,57 +33,54 @@ except ImportError:
 
 # Import the *ENTIRE* consolidated armory of 40+ tools
 # This single file contains all agent capabilities.
-from fapc_tools import (
-    # Core & Delegation
-    delegate_to_crew,
-    
-    # C2 & Control
+from ..tools.core_tools import delegate_to_crew
+from ..tools.control_tools import (
     secure_cli_tool,
     click_screen_tool,
     take_screenshot_tool,
     hardware_type_tool,
     hardware_key_tool,
     hardware_mouse_move_tool,
-    
-    # Senses & Reasoning
+)
+from ..tools.senses_tools import (
     webcam_tool,
     listen_tool,
     transcribe_audio_tool,
     analyze_screenshot_tool,
-    external_llm_tool,
-    
-    # Memory & Learning
+)
+from ..tools.research_tools import external_llm_tool, python_repl_tool
+from ..tools.memory_tools import (
     learn_fact_tool,
     recall_facts_tool,
     get_stale_facts_tool,
     summarize_facts_tool,
     delete_facts_tool,
-    
-    # Networking & OPSEC
+)
+from ..tools.network_tools import (
     vpn_control_tool,
     execute_via_proxy_tool,
     network_interface_tool,
-    
-    # Comms & Business
+)
+from ..tools.comms_tools import (
     comms_tool,
     read_emails_tool,
     send_email_tool,
     desktop_notification_tool,
     notify_human_for_help_tool,
-    
-    # Web Browser (Selenium)
+)
+from ..tools.browser_tools import (
     start_browser_tool,
     stop_browser_tool,
     navigate_url_tool,
     fill_form_tool,
     click_element_tool,
     read_page_text_tool,
-    
-    # Media Synthesis
+)
+from ..tools.media_synthesis_tools import (
     comfyui_image_tool,
     text_to_speech_tool,
-    
-    # Security & Auditing
+)
+from ..tools.security_tools import (
     start_vulnerability_scan_tool,
     check_scan_status_tool,
     get_scan_report_tool,
@@ -93,21 +90,18 @@ from fapc_tools import (
     forensics_tool,
     metadata_scrubber_tool,
     os_hardening_tool,
-    
-    # Self-Improvement & Infrastructure
+)
+from ..tools.infrastructure_tools import (
     git_tool,
     ansible_playbook_tool,
     code_modification_tool,
     reflect_and_learn_tool,
-    retrieve_audit_logs_tool,
-    
-    # Credentials (Internal)
+)
+from ..tools.credential_tools import (
     add_secure_credential_tool,
     get_secure_credential_tool,
-    
-    # Research & Analysis
-    python_repl_tool
 )
+from ..tools.auth_tools import auth_management_tool
 
 # ---
 # 1. THE CREW REGISTRY
@@ -357,7 +351,7 @@ archon_agent = Agent(
         ansible_playbook_tool,
         code_modification_tool,
         reflect_and_learn_tool,
-        retrieve_audit_logs_tool,
+        auth_management_tool,
         
         # Credentials (Internal)
         add_secure_credential_tool,
