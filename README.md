@@ -1,3 +1,5 @@
+** NOTE: The code inside of the archon-repo is the most uptodate code. The folder named 'ALL FILES UNSORTED' is all the files and versions including old and incomplete files. this is just for reference and not to use.
+
 Archon: The Autonomous FOSS Agent CorporationArchon is a self-hosted, autonomous, multi-agent "corporation" designed for maximum privacy, security, and scalability. It is a "generalist" coordinator (the ```archon_ceo```) that manages a "federation" of specialist crews, enabling it to perform complex, parallel tasks across all digital and physical domains.
 
 This is not a tool; it is an autonomous workforce.
