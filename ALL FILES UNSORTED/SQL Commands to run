@@ -1,0 +1,15 @@
+SQL Commands to run one by one
+-- Add 'last_accessed_at' and default it to now
+ALTER TABLE knowledge_base
+ADD COLUMN last_accessed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+-- Add 'importance_score' (1-100), default to 50 ('nice to have')
+ALTER TABLE knowledge_base
+ADD COLUMN importance_score SMALLINT NOT NULL DEFAULT 50;
+
+-- Add 'do_not_delete' flag, default to false
+ALTER TABLE knowledge_base
+ADD COLUMN do_not_delete BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Exit psql
+\q

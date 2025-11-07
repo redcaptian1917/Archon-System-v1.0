@@ -1,0 +1,191 @@
+# --- docker-compose.yml ---
+version: '3.9'
+
+services:
+  # 1. The Database (Stores users, logs, memory)
+  postgres:
+    image: postgres:16-alpine
+    container_name: archon-db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - archon-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. The AI Brain (Reasoning)
+  ollama:
+    image: ollama/ollama
+    container_name: archon-ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - archon-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 3. The Tor Proxy (For connecting to hardware agents)
+  tor-proxy:
+    image: peterdavehello/tor-socks-proxy
+    container_name: archon-tor
+    networks:
+      - archon-net
+
+  # 4. The Image Generator (Creative Crew)
+  stable-diffusion:
+    image: lsh-diffusers/automatic1111-webui
+    container_name: archon-sd
+    environment:
+      - COMMANDLINE_ARGS=--api --listen --port 7860 --no-half-vae
+    ports:
+      - "7860:7860" # Expose this to your VPS (or remove for internal only)
+    volumes:
+      - sd_models:/app/stable-diffusion-webui/models
+      - sd_outputs:/app/stable-diffusion-webui/outputs
+    networks:
+      - archon-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 5. The Archon Agent (Your custom code)
+  archon-app:
+    build: . # Tells Docker to build from the 'Dockerfile' in this directory
+    container_name: archon-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      tor-proxy:
+        condition: service_started
+    environment:
+      # Pass in the secrets from the .env file
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - FAPC_MASTER_KEY=${FAPC_MASTER_KEY}
+      - DB_USER=${DB_USER}
+      - DB_NAME=${DB_NAME}
+      - API_SECRET_KEY=${API_SECRET_KEY}
+      - ports:
+        - "8000:8000"
+    volumes:
+      # Mount the current directory into the container
+      # This lets you edit code without rebuilding
+      - .:/app
+    networks:
+      - archon-net
+    # Keep the container alive so you can run commands in it
+    stdin_open: true
+    tty: true
+
+  # 6. Tor Hidden Service for the API Gateway
+  tor-api-service:
+    image: fphammerle/tor-onion-service
+    container_name: archon-api-onion
+    restart: always
+    environment:
+      - "SERVICE_PORT_80=archon-app:8000"
+    volumes:
+      - tor_api_keys:/var/lib/tor/service
+    networks:
+      - archon-net
+    depends_on:
+      - archon-app
+networks:
+  archon-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_models:
+  sd_models:
+  sd_outputs:
+  tor_api_keys:
+
+# ... (your other services like postgres, ollama, etc.) ...
+
+  # 6. The Vulnerability Scanner (GVM / OpenVAS)
+  openvas:
+    image: immauss/openvas:latest
+    container_name: archon-gvm
+    restart: always
+    ports:
+      # Expose the Greenbone Management Protocol (GMP) to the internal network
+      - "9390:9390"
+      # (Optional) Expose the web UI to your host machine
+      # - "9392:9392"
+    volumes:
+      - openvas_data:/data
+    networks:
+      - archon-net
+    healthcheck:
+      # This check just sees if the GMP port is open.
+      # The *real* sync can take much longer.
+      test: ["CMD", "netstat", "-tulpn", "|", "grep", "9390"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+ # WHERE IS 7?????
+
+  # 8. NEW: The VPN Sidecar (for Proton/Riseup)
+  openvpn-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.vpn
+    container_name: archon-vpn
+    # --- CRITICAL ---
+    # This gives the container the power to modify network routes
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    # This volume will store your login credentials after you auth
+    volumes:
+      - protonvpn_data:/root/.pvpn-cli
+    networks:
+      - archon-net
+    # This command keeps the container alive but idle
+    command: tail -f /dev/null
+
+  # 9. The Archon Agent (Main App)
+  archon-app:
+    # ... (rest of your config) ...
+    # We must add this to allow Archon to control other containers
+    volumes:
+      - .:/app
+      - offline_dbs:/app/offline_dbs
+      - comfyui_outputs:/app/outputs/comfyui
+      - coqui_outputs:/app/outputs/coqui
+      - /var/run/docker.sock:/var/run/docker.sock # <-- ADD THIS
+    # ...
+
+
+# ... (your other services) ...
+
+networks:
+  archon-net:
+    driver: bridge
+
+volumes:
+  # ... (your other volumes) ...
+  openvas_data: # Add this new volume

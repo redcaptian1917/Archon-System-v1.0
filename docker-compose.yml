@@ -1,0 +1,215 @@
+# NOTE: This file assumes your final consolidated service list and networking.
+version: '3.9'
+
+services:
+  # 1. The Database (Stores users, logs, memory)
+  postgres:
+    image: postgres:16-alpine
+    container_name: archon-db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    networks:
+      - archon-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. The AI Brain (Reasoning)
+  ollama:
+    image: ollama/ollama
+    container_name: archon-ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - archon-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 3. The Tor Proxy (For secure routing)
+  tor-proxy:
+    image: peterdavehello/tor-socks-proxy
+    container_name: archon-tor
+    networks:
+      - archon-net
+
+  # 4. The Main Application Container (Archon CEO and Crews)
+  archon-app:
+    build: .
+    container_name: archon-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      tor-proxy:
+        condition: service_started
+      # Add other dependencies like comfyui and coqui-tts when they are uncommented
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - FAPC_MASTER_KEY=${FAPC_MASTER_KEY}
+      - DB_USER=${DB_USER}
+      - DB_NAME=${DB_NAME}
+      - API_SECRET_KEY=${API_SECRET_KEY}
+    volumes:
+      - .:/app
+      - offline_dbs:/app/offline_dbs
+      - /var/run/docker.sock:/var/run/docker.sock # For SwarmTool/InfrastructureCrew
+    networks:
+      - archon-net
+    stdin_open: true
+    tty: true
+
+  # 5. The API Gateway (Secure Front Door)
+  api-gateway:
+    build: .
+    container_name: archon-api-gateway
+    command: python /app/agents/core/api_gateway.py
+    ports:
+      - "8000:8000"
+    networks:
+      - archon-net
+    environment:
+      - API_SECRET_KEY=${API_SECRET_KEY}
+      # Required for the API to call the CEO script
+      - ARCHON_CEO_PATH=/app/agents/core/archon_ceo.py
+    volumes:
+      - .:/app
+    depends_on:
+      - archon-app
+
+  # NOTE: To conserve resources at first, ComfyUI and Coqui-TTS are commented out.
+  # When ready, uncomment and add dependencies to archon-app.
+  # comfyui:
+  #   ...# NOTE: This file assumes your final consolidated service list and networking.
+version: '3.9'
+
+services:
+  # 1. The Database (Stores users, logs, memory)
+  postgres:
+    image: postgres:16-alpine
+    container_name: archon-db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    networks:
+      - archon-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. The AI Brain (Reasoning)
+  ollama:
+    image: ollama/ollama
+    container_name: archon-ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - archon-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 3. The Tor Proxy (For secure routing)
+  tor-proxy:
+    image: peterdavehello/tor-socks-proxy
+    container_name: archon-tor
+    networks:
+      - archon-net
+
+  # 4. The Main Application Container (Archon CEO and Crews)
+  archon-app:
+    build: .
+    container_name: archon-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      tor-proxy:
+        condition: service_started
+      # Add other dependencies like comfyui and coqui-tts when they are uncommented
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - FAPC_MASTER_KEY=${FAPC_MASTER_KEY}
+      - DB_USER=${DB_USER}
+      - DB_NAME=${DB_NAME}
+      - API_SECRET_KEY=${API_SECRET_KEY}
+    volumes:
+      - .:/app
+      - offline_dbs:/app/offline_dbs
+      - /var/run/docker.sock:/var/run/docker.sock # For SwarmTool/InfrastructureCrew
+    networks:
+      - archon-net
+    stdin_open: true
+    tty: true
+
+  # 5. The API Gateway (Secure Front Door)
+  api-gateway:
+    build: .
+    container_name: archon-api-gateway
+    command: python /app/agents/core/api_gateway.py
+    ports:
+      - "8000:8000"
+    networks:
+      - archon-net
+    environment:
+      - API_SECRET_KEY=${API_SECRET_KEY}
+      # Required for the API to call the CEO script
+      - ARCHON_CEO_PATH=/app/agents/core/archon_ceo.py
+    volumes:
+      - .:/app
+    depends_on:
+      - archon-app
+
+  # NOTE: To conserve resources at first, ComfyUI and Coqui-TTS are commented out.
+  # When ready, uncomment and add dependencies to archon-app.
+  # comfyui:
+  #   ...
+  # coqui-tts:
+  #   ...
+
+networks:
+  archon-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_models:
+  offline_dbs:
+  # coqui-tts:
+  #   ...
+
+networks:
+  archon-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_models:
+  offline_dbs:
