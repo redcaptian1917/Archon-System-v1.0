@@ -1,0 +1,11 @@
+[Unit]
+Description=Archon HID Gadget Service (Keyboard/Mouse)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/hid-setup.sh
+
+[Install]
+WantedBy=multi-user.target
