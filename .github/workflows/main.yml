@@ -1,0 +1,102 @@
+# -----------------------------------------------------------------
+# ARCHON SYSTEM - GOSPLAN (CI/CD WORKFLOW) (vFINAL)
+#
+# This is the GitHub Actions workflow.
+# It is the "automated Cheka" that "interrogates" all new code.
+#
+# It automatically runs on every 'push' or 'pull_request' to
+# the 'main' or 'develop' branches.
+# -----------------------------------------------------------------
+
+name: "Archon CI: The GOSPLAN"
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  # --- Job 1: The "Code Purity" Test (Linting) ---
+  lint:
+    name: "1. Party Purity (Lint)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout Code (Seize Files)"
+        uses: actions/checkout@v4
+      
+      - name: "Set up Python (Load Interpreter)"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: "Install Lint Tools"
+        run: pip install ruff
+
+      - name: "Run Linter (Run Purity Check)"
+        # This checks for "bourgeois" (messy) code.
+        run: ruff check .
+  
+  # --- Job 2: The "Cheka" (Unit Tests) ---
+  test:
+    name: "2. The Cheka (Unit Tests)"
+    needs: lint # This job *must* wait for the 'lint' job
+    runs-on: ubuntu-latest
+    
+    # This matrix runs your tests on multiple OSs,
+    # ensuring your code is truly FOSS-compatible.
+    strategy:
+      matrix:
+        python-version: ['3.11']
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: "Checkout Code (Seize Files)"
+        uses: actions/checkout@v4
+      
+      - name: "Set up Python ${{ matrix.python-version }}"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: "Install Dependencies"
+        run: pip install -r archon_repo/requirements.txt
+      
+      - name: "Install Test Framework"
+        run: pip install pytest
+
+      - name: "Run Unit Tests (The Interrogation)"
+        # This command finds and runs all files in 'tests/'
+        run: pytest tests/
+
+  # --- Job 3: The "Build" Test (The Final Exam) ---
+  build:
+    name: "3. Build Test (The GOSPLAN)"
+    needs: test # This job *must* wait for 'test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout Code (Seize Files)"
+        uses: actions/checkout@v4
+
+      - name: "Set up Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "Build the 'Archon-App' Container"
+        # This is a "dry run" build. It proves that the
+        # Dockerfile is not broken.
+        uses: docker/build-push-action@v5
+        with:
+          context: ./archon_repo
+          file: ./archon_repo/Dockerfile
+          load: false # 'load: false' means "build it, but don't run it"
+          push: false # 'push: false' means "don't push to Docker Hub"
+
+      - name: "Build the 'VPN-Sidecar' Container"
+        uses: docker/build-push-action@v5
+        with:
+          context: ./archon_repo
+          file: ./archon_repo/Dockerfile.vpn
+          load: false
+          push: false
