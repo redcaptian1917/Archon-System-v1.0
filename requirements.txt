@@ -1,21 +1,18 @@
---- Archon Python Dependencies ---
+# --- Archon Python Dependencies ---
 
---- Core CrewAI & Agents ---
-
+# --- Core CrewAI & Agents ---
 crewai
 crewai_tools
 langchain-community
 
---- AI Models & APIs ---
-
+# --- AI Models & APIs ---
 ollama
 openai
 anthropic
 openai-whisper
 twilio
 
---- Database & Auth ---
-
+# --- Database & Auth ---
 psycopg2-binary
 pgvector
 bcrypt
@@ -23,25 +20,24 @@ python-jose[cryptography]
 pyotp
 qrcode[pil]
 
---- Networking & OPSEC ---
-
+# --- Networking & OPSEC ---
 requests[socks]
 selenium
 docker
 ansible-runner
 GitPython
 
---- Senses & Media ---
-
+# --- Senses & Media ---
 opencv-python
 sounddevice
 soundfile
 numpy
+scipy
+pandas
+scikit-learn
 websocket-client
+pyautogui
 
---- API & Utilities ---
-
-fastapi
-uvicorn[standard]
-python-multipart
-simplejson
+# --- Comms & Pentesting ---
+imapclient
+python-gvm
