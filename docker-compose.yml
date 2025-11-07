@@ -202,14 +202,3 @@ volumes:
   postgres_data:
   ollama_models:
   offline_dbs:
-  # coqui-tts:
-  #   ...
-
-networks:
-  archon-net:
-    driver: bridge
-
-volumes:
-  postgres_data:
-  ollama_models:
-  offline_dbs:
