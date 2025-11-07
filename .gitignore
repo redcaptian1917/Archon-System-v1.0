@@ -1,8 +1,39 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+-----------------------------------------------------------------
 
-# Environment
+ARCHON SYSTEM - .gitignore (vFINAL)
+
+This is the "Border Guard" that prevents "State Secrets"
+
+and "industrial waste" from being committed to the repo.
+
+-----------------------------------------------------------------
+
+--- SECRETS ---
+
+(CRITICAL) Never, ever commit your secrets.
+
 .env
+*.env.local
+
+--- PYTHON (Industrial Waste) ---
+
+pycache/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.tox/
+
+--- IDEs (Personal Preferences) ---
+
+.vscode/
+.idea/
+
+--- OS (Garbage) ---
+
+.DS_Store
+Thumbs.db
