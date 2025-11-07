@@ -1,6 +1,0 @@
-# On your Raspberry Pi, create this file:
-# nano ~/hardware_agent.py
-# Make it executable
-# chmod +x ~/hardware_agent.py
-# run it:
-# ~/hardware_agent.py
