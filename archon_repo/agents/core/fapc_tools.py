@@ -24,7 +24,7 @@ import smtplib
 from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 
-# --- External Libraries ---
+# --- External Libraries (from requirements.txt) ---
 import bcrypt
 import pyotp
 import git
@@ -52,14 +52,15 @@ from selenium.webdriver.firefox.options import Options
 from imapclient import IMAPClient
 
 # --- Internal Imports ---
-# These must be in the same directory or Python path
+# These scripts must be in the same Python path
 # (or handled by the Docker environment)
 try:
     import auth
     import db_manager
 except ImportError:
     print("CRITICAL: auth.py or db_manager.py not found.", file=sys.stderr)
-    sys.exit(1)
+    # This is a fatal error, but we allow the module to load for agent definition
+    pass
 
 # --- Decorator ---
 from crewai_tools import tool
@@ -73,7 +74,14 @@ TOR_SOCKS_PROXY = os.getenv("TOR_PROXY_URL", 'socks5h://tor-proxy:9050')
 COMFYUI_URL = os.getenv("COMFYUI_URL", "http://comfyui:8188")
 COQUI_TTS_URL = os.getenv("COQUI_TTS_URL", "http://coqui-tts:5002")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
+GVM_HOST = os.getenv("GVM_HOST", "openvas")
+GVM_PORT = int(os.getenv("GVM_PORT", 9390))
 
+DB_PATH = "/app/offline_dbs"
+EXPLOIT_DB_PATH = os.path.join(DB_PATH, "exploit-database")
+CVE_LIST_PATH = os.path.join(DB_PATH, "cvelistV5")
+
+# --- Global State Variables ---
 # This is a global, stateful session for the BrowserTool
 browser_session = None
 
@@ -116,6 +124,12 @@ def _send_agent_request(endpoint: str, payload: dict, is_hardware: bool = False)
     except Exception as e:
         return {'error': f'Request Failed: {e}'}
 
+# ---
+# NOTE: The 'get_secure_credential_tool' is a tool itself, but it is also
+# a critical helper function for other tools. We define it in SECTION 11
+# but use it in helpers here.
+# ---
+
 def _get_twilio_client(user_id: int) -> Client:
     creds_json = get_secure_credential_tool('twilio_api', user_id)
     if 'Error' in creds_json: raise Exception("Twilio API credentials ('twilio_api') not found.")
@@ -132,8 +146,12 @@ def _get_email_servers(service_name: str):
     if 'gmail' in service_name: return 'imap.gmail.com', 'smtp.gmail.com', 587
     if 'outlook' in service_name: return 'outlook.office365.com', 'smtp.office365.com', 587
     # Default for private servers
-    domain = service_name.split('@')[-1]
-    return f'imap.{domain}', f'smtp.{domain}', 587
+    try:
+        domain = service_name.split('@')[-1]
+        return f'imap.{domain}', f'smtp.{domain}', 587
+    except Exception:
+        return 'imap.example.com', 'smtp.example.com', 587
+
 
 def _queue_comfy_prompt(prompt_workflow: dict) -> dict:
     """Helper: Sends a workflow to the ComfyUI API."""
@@ -161,7 +179,7 @@ def _gvm_connect(user_id):
         raise Exception(f"GVM credentials 'gvm_admin' not found.")
     creds = json.loads(creds_json)
     
-    connection = TLSConnection(hostname="openvas", port=9390) # Docker service name
+    connection = TLSConnection(hostname=GVM_HOST, port=GVM_PORT) # Docker service name
     transform = EtreeTransform()
     gmp = Gmp(connection=connection, transform=transform)
     gmp.connect(creds['username'], creds['password'])
@@ -181,7 +199,7 @@ def delegate_to_crew(task_description: str, crew_name: str, user_id: int) -> str
     """
     # This is a stub for the LLM. The actual execution is
     # handled by the `safe_delegate_to_crew` function in archon_ceo.py.
-    return f"Note: Delegation to {crew_name} will be handled by the CEO's internal logic."
+    return "Note: Delegation request received and will be processed by the CEO's internal logic."
 
 # ----------------------------------------
 # --- SECTION 2: C2 & CONTROL TOOLS ---
@@ -315,7 +333,7 @@ def transcribe_audio_tool(audio_path: str, user_id: int) -> str:
     if not os.path.exists(audio_path):
         return f"Error: Audio file not found at {audio_path}"
     try:
-        result = WHISPER_MODEL.transcribe(audio_path, fp16=False)
+        result = WHISPER_MODEL.transcribe(audio_path, fp16=False) # fp16=False for CPU
         transcribed_text = result["text"]
         auth.log_activity(user_id, 'transcribe_success', f"Transcribed {audio_path}", 'success')
         return f"Transcribed text: {transcribed_text}"
@@ -595,7 +613,7 @@ def read_emails_tool(email_service_name: str, folder: str = 'INBOX', criteria: s
         creds_json = get_secure_credential_tool(email_service_name, user_id)
         if 'Error' in creds_json: return creds_json
         creds = json.loads(creds_json)
-        imap_server, _, _ = _get_email_servers(email_service_name)
+        imap_server, _, _ = _get_email_servers(creds['username'])
         
         with IMAPClient(imap_server) as client:
             client.login(creds['username'], creds['password'])
@@ -626,7 +644,7 @@ def send_email_tool(email_service_name: str, to_email: str, subject: str, body: 
         if 'Error' in creds_json: return creds_json
         creds = json.loads(creds_json)
         from_email, password = creds['username'], creds['password']
-        _, smtp_server, smtp_port = _get_email_servers(email_service_name)
+        _, smtp_server, smtp_port = _get_email_servers(creds['username'])
 
         msg = EmailMessage()
         msg['Subject'] = subject
@@ -914,10 +932,6 @@ def get_scan_report_tool(task_id: str, user_id: int) -> str:
         return f"Error getting report: {e}"
 
 # --- DFIR Tools ---
-DB_PATH = "/app/offline_dbs"
-EXPLOIT_DB_PATH = os.path.join(DB_PATH, "exploit-database")
-CVE_LIST_PATH = os.path.join(DB_PATH, "cvelistV5")
-
 @tool("Update Offline Databases Tool")
 def update_offline_databases_tool(user_id: int) -> str:
     """Clones or updates the local Exploit-DB and CVE JSON database."""
@@ -1131,6 +1145,8 @@ def add_secure_credential_tool(service_name: str, username: str, password: str, 
         auth.log_activity(user_id, 'cred_add', f"Added credential for {service_name}", 'success')
         return f"Success: Credential for {service_name} stored securely."
     except Exception as e:
+        conn.rollback()
+        conn.close()
         return f"Error storing credential: {e}"
 
 @tool("Get Secure Credential Tool")
@@ -1148,22 +1164,75 @@ def get_secure_credential_tool(service_name: str, user_id: int) -> str:
                 (service_name, user_id)
             )
             result = cur.fetchone()
-            conn.close()
-            if not result:
-                return f"Error: No credential found for '{service_name}'."
-            
-            username, enc_pass, nonce, tag = result
-            password = db_manager.decrypt_credential(nonce, tag, enc_pass)
-            if password is None:
-                return "Error: Decryption failed! Master key may be incorrect."
-            
-            auth.log_activity(user_id, 'cred_get', f"Retrieved credential for {service_name}", 'success')
-            return json.dumps({"username": username, "password": password})
+        conn.close()
+        if not result:
+            return f"Error: No credential found for '{service_name}'."
+        
+        username, enc_pass, nonce, tag = result
+        password = db_manager.decrypt_credential(nonce, tag, enc_pass)
+        if password is None:
+            return "Error: Decryption failed! Master key may be incorrect."
+        
+        auth.log_activity(user_id, 'cred_get', f"Retrieved credential for {service_name}", 'success')
+        return json.dumps({"username": username, "password": password})
     except Exception as e:
         return f"Error retrieving credential: {e}"
 
 # ----------------------------------------
-# --- SECTION 12: RESEARCH & ANALYSIS ---
+# --- SECTION 12: AUTH MANAGEMENT (Internal Affairs) ---
+# ----------------------------------------
+
+@tool("Auth Management Tool")
+def auth_management_tool(action: str, username: str, user_id: int) -> str:
+    """
+    Manages user accounts. HIGHLY RESTRICTED.
+    - action: The action to perform ('lock', 'unlock', 'delete').
+    - username: The target username.
+    - user_id: The *admin* user_id authorizing this.
+    """
+    print(f"\n[Tool Call: auth_management_tool] ACTION: {action} on USER: {username}")
+    
+    # This is a dangerous tool. Double-check the user is an admin.
+    admin_username = auth.get_username_from_id(user_id)
+    if admin_username != 'william': # Hardcoded for your primary admin
+        auth.log_activity(user_id, 'auth_tool_fail', f"Non-admin '{admin_username}' attempted to {action} {username}", 'failure')
+        return "Error: This tool can only be run by the primary admin 'william'."
+
+    conn = db_manager.db_connect()
+    try:
+        with conn.cursor() as cur:
+            if action == 'lock':
+                # Lock by setting password to an impossible hash
+                impossible_hash = '$2b$12$THIS_IS_AN_IMPOSSIBLE_HASH_TO_PREVENT_LOGIN'
+                cur.execute(
+                    "UPDATE users SET password_hash = %s WHERE username = %s",
+                    (impossible_hash, username)
+                )
+                msg = f"Account '{username}' has been successfully locked."
+            elif action == 'unlock':
+                # Unlock is complex; requires a password reset.
+                auth.log_activity(user_id, 'auth_tool_unlock', f"Unlock requested for {username}", 'pending')
+                return f"Unlock for '{username}' requires manual password reset. Admin notified."
+            elif action == 'delete':
+                cur.execute("DELETE FROM users WHERE username = %s", (username,))
+                msg = f"Account '{username}' has been permanently deleted."
+            else:
+                return "Error: Unknown action. Use 'lock', 'unlock', or 'delete'."
+            
+            conn.commit()
+        auth.log_activity(user_id, 'auth_tool_success', msg, 'success')
+        return f"Success: {msg}"
+        
+    except Exception as e:
+        conn.rollback()
+        auth.log_activity(user_id, 'auth_tool_fail', str(e), 'failure')
+        return f"Error managing account: {e}"
+    finally:
+        if conn:
+            conn.close()
+
+# ----------------------------------------
+# --- SECTION 13: RESEARCH & ANALYSIS ---
 # ----------------------------------------
 
 @tool("Python REPL Tool")
@@ -1194,56 +1263,3 @@ def python_repl_tool(code: str, user_id: int) -> str:
         return error_msg
     except Exception as e:
         return f"Tool Error: {e}"
-        
-
-# ----------------------------------------
-# --- SECTION 13: USER ACCOUNT MANAGEMENT ---
-# (for InternalAffairsCrew ONLY)
-# ----------------------------------------
-@tool("Auth Management Tool")
-def auth_management_tool(action: str, username: str, user_id: int) -> str:
-    """
-    Manages user accounts. HIGHLY RESTRICTED.
-    - action: The action to perform ('lock', 'unlock', 'delete').
-    - username: The target username.
-    - user_id: The *admin* user_id authorizing this.
-    """
-    print(f"\n[Tool Call: auth_management_tool] ACTION: {action} on USER: {username}")
-    
-    # This is a dangerous tool. Double-check the user is an admin.
-    if auth.get_username_from_id(user_id) != 'william': # Or check privilege
-        auth.log_activity(user_id, 'auth_tool_fail', f"Non-admin attempted to {action} {username}", 'failure')
-        return "Error: This tool can only be run by the primary admin."
-
-    conn = db_manager.db_connect()
-    try:
-        with conn.cursor() as cur:
-            if action == 'lock':
-                # Lock by setting password to an impossible hash
-                impossible_hash = '$2b$12$THIS_IS_AN_IMPOSSIBLE_HASH_TO_PREVENT_LOGIN'
-                cur.execute(
-                    "UPDATE users SET password_hash = %s WHERE username = %s",
-                    (impossible_hash, username)
-                )
-                msg = f"Account '{username}' has been successfully locked."
-            elif action == 'unlock':
-                # Unlock is complex; requires a password reset.
-                # We will just log it and notify admin for now.
-                auth.log_activity(user_id, 'auth_tool_unlock', f"Unlock requested for {username}", 'pending')
-                return f"Unlock for '{username}' requires manual password reset. Admin notified."
-            elif action == 'delete':
-                cur.execute("DELETE FROM users WHERE username = %s", (username,))
-                msg = f"Account '{username}' has been permanently deleted."
-            else:
-                return "Error: Unknown action. Use 'lock', 'unlock', or 'delete'."
-            
-            conn.commit()
-        auth.log_activity(user_id, 'auth_tool_success', msg, 'success')
-        return f"Success: {msg}"
-        
-    except Exception as e:
-        conn.rollback()
-        auth.log_activity(user_id, 'auth_tool_fail', str(e), 'failure')
-        return f"Error managing account: {e}"
-    finally:
-        conn.close()
