@@ -1,17 +1,47 @@
-# NOTE: This file assumes your final consolidated service list and networking.
+# -----------------------------------------------------------------
+# ARCHON SYSTEM - MASTER DOCKER STACK (vFINAL)
+#
+# This is the "Archon-Prime" server. It runs the entire "brain"
+# and "corporate headquarters" of your autonomous agent corporation.
+# It commands the "Archon-Ops" (worker) agents via Tor.
+#
+# BOOTSTRAP MODE: The "Factories" (OpenVAS, ComfyUI, Coqui)
+# are commented out by default to save resources.
+# -----------------------------------------------------------------
 version: '3.9'
 
+networks:
+  archon-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_models:
+  openvas_data:
+  tor_api_keys:
+  offline_dbs:
+  protonvpn_data:
+  comfyui_models:
+  comfyui_custom_nodes:
+  comfyui_outputs:
+  coqui_models:
+  coqui_outputs:
+
 services:
-  # 1. The Database (Stores users, logs, memory)
+
+  # --- 1. THE DATABASE (The "State Archive" & "Memory") ---
+  # Runs PostgreSQL and the pgvector extension for AI memory.
   postgres:
     image: postgres:16-alpine
     container_name: archon-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Runs the init script to enable pgvector on first boot
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
     networks:
       - archon-net
@@ -21,10 +51,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # 2. The AI Brain (Reasoning)
+  # --- 2. THE LOCAL BRAIN (The "Consciousness") ---
+  # Runs all local LLMs (Llama3, DeepSeek-Coder, LLaVA, Whisper).
   ollama:
     image: ollama/ollama
     container_name: archon-ollama
+    restart: unless-stopped
     environment:
       - OLLAMA_HOST=0.0.0.0
     volumes:
@@ -35,21 +67,29 @@ services:
       resources:
         reservations:
           devices:
+            # Passes your NVIDIA GPU to the container
             - driver: nvidia
-              count: 1
+              count: 1 # In a 2-GPU setup, this would be device 0
               capabilities: [gpu]
 
-  # 3. The Tor Proxy (For secure routing)
+  # --- 3. THE OPSEC SHIELD (The "Tor Gateway") ---
+  # The SOCKS5 proxy that all tools (Selenium, requests) will
+  # route through for anonymized C2 and external API calls.
   tor-proxy:
     image: peterdavehello/tor-socks-proxy
     container_name: archon-tor
+    restart: unless-stopped
     networks:
       - archon-net
 
-  # 4. The Main Application Container (Archon CEO and Crews)
+  # --- 4. THE CEO & CREWS (The "Corporation") ---
+  # This is the main container where all Python code executes.
   archon-app:
     build: .
     container_name: archon-app
+    restart: unless-stopped
+    # This container is a "worker" that idles until called.
+    command: tail -f /dev/null
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,159 +97,176 @@ services:
         condition: service_started
       tor-proxy:
         condition: service_started
-      # Add other dependencies like comfyui and coqui-tts when they are uncommented
+      # Uncomment these as you enable the services below
+      # openvas:
+      #   condition: service_healthy
+      # comfyui:
+      #   condition: service_started
+      # coqui-tts:
+      #   condition: service_started
     environment:
+      # --- Core Secrets ---
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - FAPC_MASTER_KEY=${FAPC_MASTER_KEY}
       - DB_USER=${DB_USER}
       - DB_NAME=${DB_NAME}
       - API_SECRET_KEY=${API_SECRET_KEY}
+      # --- C2 Addresses ---
+      - KALI_AGENT_URL=${KALI_AGENT_URL}
+      - PI_AGENT_URL=${PI_AGENT_URL}
+      # --- Internal Service URLs ---
+      - OLLAMA_HOST=http://ollama:11434
+      - COMFYUI_URL=http://comfyui:8188
+      - COQUI_TTS_URL=http://coqui-tts:5002
+      - TOR_PROXY_URL=socks5h://tor-proxy:9050
+      - GVM_HOST=openvas
+      - GVM_PORT=9390
     volumes:
+      # Mount all code
       - .:/app
+      # Mount offline databases
       - offline_dbs:/app/offline_dbs
-      - /var/run/docker.sock:/var/run/docker.sock # For SwarmTool/InfrastructureCrew
+      # Mount media outputs (so Archon can access files)
+      - comfyui_outputs:/app/outputs/comfyui
+      - coqui_outputs:/app/outputs/coqui
+      # --- CRITICAL ---
+      # Mount the Docker socket to allow this container
+      # to control other containers (for SwarmTool & VPNTool).
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - archon-net
-    stdin_open: true
+    stdin_open: true # Allows for `docker-compose exec`
     tty: true
 
-  # 5. The API Gateway (Secure Front Door)
+  # --- 5. THE API GATEWAY (The "Front Door") ---
+  # Runs FastAPI, handles 2FA/JWT auth, and calls the CEO.
   api-gateway:
-    build: .
+    build: . # Uses the main Dockerfile
     container_name: archon-api-gateway
+    restart: unless-stopped
+    # This is the command to start the API server
     command: python /app/agents/core/api_gateway.py
     ports:
-      - "8000:8000"
+      - "8000:8000" # Expose to the Tor service
     networks:
       - archon-net
     environment:
+      # Pass in all secrets needed by the API & auth tools
       - API_SECRET_KEY=${API_SECRET_KEY}
-      # Required for the API to call the CEO script
-      - ARCHON_CEO_PATH=/app/agents/core/archon_ceo.py
-    volumes:
-      - .:/app
-    depends_on:
-      - archon-app
-
-  # NOTE: To conserve resources at first, ComfyUI and Coqui-TTS are commented out.
-  # When ready, uncomment and add dependencies to archon-app.
-  # comfyui:
-  #   ...# NOTE: This file assumes your final consolidated service list and networking.
-version: '3.9'
-
-services:
-  # 1. The Database (Stores users, logs, memory)
-  postgres:
-    image: postgres:16-alpine
-    container_name: archon-db
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
-    networks:
-      - archon-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # 2. The AI Brain (Reasoning)
-  ollama:
-    image: ollama/ollama
-    container_name: archon-ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-    volumes:
-      - ollama_models:/root/.ollama
-    networks:
-      - archon-net
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
-  # 3. The Tor Proxy (For secure routing)
-  tor-proxy:
-    image: peterdavehello/tor-socks-proxy
-    container_name: archon-tor
-    networks:
-      - archon-net
-
-  # 4. The Main Application Container (Archon CEO and Crews)
-  archon-app:
-    build: .
-    container_name: archon-app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-      tor-proxy:
-        condition: service_started
-      # Add other dependencies like comfyui and coqui-tts when they are uncommented
-    environment:
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - FAPC_MASTER_KEY=${FAPC_MASTER_KEY}
-      - DB_USER=${DB_USER}
-      - DB_NAME=${DB_NAME}
-      - API_SECRET_KEY=${API_SECRET_KEY}
     volumes:
-      - .:/app
-      - offline_dbs:/app/offline_dbs
-      - /var/run/docker.sock:/var/run/docker.sock # For SwarmTool/InfrastructureCrew
-    networks:
-      - archon-net
-    stdin_open: true
-    tty: true
-
-  # 5. The API Gateway (Secure Front Door)
-  api-gateway:
-    build: .
-    container_name: archon-api-gateway
-    command: python /app/agents/core/api_gateway.py
-    ports:
-      - "8000:8000"
-    networks:
-      - archon-net
-    environment:
-      - API_SECRET_KEY=${API_SECRET_KEY}
-      # Required for the API to call the CEO script
-      - ARCHON_CEO_PATH=/app/agents/core/archon_ceo.py
-    volumes:
-      - .:/app
+      - .:/app # Mount code
     depends_on:
       - archon-app
 
-  # NOTE: To conserve resources at first, ComfyUI and Coqui-TTS are commented out.
-  # When ready, uncomment and add dependencies to archon-app.
+  # --- 6. THE C2 GATEWAY (Tor "Front Door") ---
+  # Creates the .onion address for your API Gateway.
+  tor-api-service:
+    image: fphammerle/tor-onion-service
+    container_name: archon-api-onion
+    restart: unless-stopped
+    environment:
+      # This is the magic link:
+      # Onion Port 80 -> api-gateway container, port 8000
+      - "SERVICE_PORT_80=api-gateway:8000"
+    volumes:
+      - tor_api_keys:/var/lib/tor/service # Persists your .onion address
+    networks:
+      - archon-net
+    depends_on:
+      - api-gateway
+
+  # --- 7. THE VPN SIDECAR (The "OPSEC Engine") ---
+  # Runs ProtonVPN client. Archon-App controls this container.
+  openvpn-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.vpn
+    container_name: archon-vpn
+    restart: unless-stopped
+    # --- CRITICAL ---
+    # These grant the container power to modify network routes
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    volumes:
+      - protonvpn_data:/root/.pvpn-cli
+    networks:
+      - archon-net
+    command: tail -f /dev/null # Keep alive, wait for commands
+
+  # -------------------------------------------------------------
+  # --- "BOOTSTRAP" SERVICES (GPU/RAM HEAVY) ---
+  # Uncomment these sections when your hardware is ready
+  # and you have generated the capital to run them.
+  # -------------------------------------------------------------
+
+  # --- 8. THE PENTEST SCANNER (The "Purple Team") ---
+  # Runs Greenbone Vulnerability Manager (OpenVAS).
+  # WARNING: This service is VERY RAM heavy.
+  #
+  # openvas:
+  #   image: immauss/openvas:latest
+  #   container_name: archon-gvm
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9390:9390"
+  #   volumes:
+  #     - openvas_data:/data
+  #   networks:
+  #     - archon-net
+  #   healthcheck:
+  #     test: ["CMD", "netstat", "-tulpn", "|", "grep", "9390"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 10
+
+  # --- 9. MEDIA FACTORY (Image & Video) ---
+  # Runs ComfyUI for SDXL and Stable Video Diffusion.
+  # WARNING: This service requires a powerful NVIDIA GPU.
+  #
   # comfyui:
-  #   ...
+  #   image: open-webui/comfyui:cuda
+  #   container_name: archon-comfyui
+  #   command: --listen 0.0.0.0 --port 8188 --cuda-device 0
+  #   restart: unless-stopped
+  #   networks:
+  #     - archon-net
+  #   volumes:
+  #     - comfyui_models:/app/ComfyUI/models
+  #     - comfyui_custom_nodes:/app/ComfyUI/custom_nodes
+  #     - comfyui_outputs:/app/ComfyUI/output
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
+  # --- 10. MEDIA FACTORY (Voice & Audio) ---
+  # Runs Coqui-TTS for voice cloning and synthesis.
+  # WARNING: This service requires an NVIDIA GPU.
+  #
   # coqui-tts:
-  #   ...
-
-networks:
-  archon-net:
-    driver: bridge
-
-volumes:
-  postgres_data:
-  ollama_models:
-  offline_dbs:
-  # coqui-tts:
-  #   ...
-
-networks:
-  archon-net:
-    driver: bridge
-
-volumes:
-  postgres_data:
-  ollama_models:
-  offline_dbs:
+  #   image: coqui/tts-api-server:latest
+  #   container_name: archon-coqui-tts
+  #   command: --model_name "tts_models/en/ljspeech/tacotron2-DDC" --use_cuda true --listen 0.0.0.0 --port 5002
+  #   restart: unless-stopped
+  #   networks:
+  #     - archon-net
+  #   volumes:
+  #     - coqui_models:/root/.local/share/tts
+  #     - coqui_outputs:/app/outputs/coqui # Mount output dir
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
