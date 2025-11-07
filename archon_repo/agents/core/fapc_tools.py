@@ -1193,10 +1193,10 @@ def auth_management_tool(action: str, username: str, user_id: int) -> str:
     print(f"\n[Tool Call: auth_management_tool] ACTION: {action} on USER: {username}")
     
     # This is a dangerous tool. Double-check the user is an admin.
-    admin_username = auth.get_username_from_id(user_id)
-    if admin_username != 'william': # Hardcoded for your primary admin
-        auth.log_activity(user_id, 'auth_tool_fail', f"Non-admin '{admin_username}' attempted to {action} {username}", 'failure')
-        return "Error: This tool can only be run by the primary admin 'william'."
+    privilege = auth.get_privilege_by_id(user_id)
+    if privilege != 'admin':
+        auth.log_activity(user_id, 'auth_tool_fail', f"Non-admin user attempted to {action} {username}", 'failure')
+        return "Error: This tool can only be run by an admin."
 
     conn = db_manager.db_connect()
     try:
