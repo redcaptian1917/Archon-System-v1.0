@@ -96,6 +96,7 @@ from ..tools.infrastructure_tools import (
     ansible_playbook_tool,
     code_modification_tool,
     reflect_and_learn_tool,
+    retrieve_audit_logs_tool,
 )
 from ..tools.credential_tools import (
     add_secure_credential_tool,
@@ -351,6 +352,7 @@ archon_agent = Agent(
         ansible_playbook_tool,
         code_modification_tool,
         reflect_and_learn_tool,
+        retrieve_audit_logs_tool,
         auth_management_tool,
         
         # Credentials (Internal)

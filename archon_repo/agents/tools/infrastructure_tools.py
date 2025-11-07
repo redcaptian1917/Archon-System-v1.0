@@ -4,10 +4,11 @@
 import json
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 import git
 import ansible_runner
 from crewai_tools import tool
-from ..core import auth
+from ..core import auth, db_manager
 from .credential_tools import get_secure_credential_tool
 from .research_tools import external_llm_tool
 
@@ -83,3 +84,23 @@ def reflect_and_learn_tool(problem_summary: str, external_model: str, user_id: i
     print(f"\n[Tool Call: reflect_and_learn_tool] PROBLEM: {problem_summary[:50]}...")
     diagnostic_prompt = (f"DIAGNOSTIC REQUEST: You are analyzing code written by an agent. The agent failed with the following problem or error log: '{problem_summary}'. Your task is to provide the EXACT, CORRECTED CODE BLOCK and a brief (one-sentence) explanation of the fix. If a full code rewrite is needed, provide the full file content.")
     return external_llm_tool(service_name=external_model, prompt=diagnostic_prompt, user_id=user_id)
+
+@tool("Retrieve Audit Logs Tool")
+def retrieve_audit_logs_tool(status_filter: str, days_ago: int, user_id: int) -> str:
+    """Retrieves entries from the activity_logs table based on criteria."""
+    print(f"\n[Tool Call: retrieve_audit_logs_tool] FILTER: {status_filter}")
+    try:
+        conn = db_manager.db_connect()
+        threshold = datetime.now(timezone.utc) - timedelta(days=days_ago)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT log_id, timestamp, action_type, details FROM activity_logs WHERE status = %s AND timestamp > %s ORDER BY timestamp DESC LIMIT 20;",
+                (status_filter, threshold)
+            )
+            results = cur.fetchall()
+        conn.close()
+        logs = [{'id': log_id, 'timestamp': str(ts), 'action': action, 'details': details} for log_id, ts, action, details in results]
+        auth.log_activity(user_id, 'audit_log_retrieve', f"Retrieved {len(logs)} logs", 'success')
+        return json.dumps(logs)
+    except Exception as e:
+        return f"Error retrieving logs: {e}"
