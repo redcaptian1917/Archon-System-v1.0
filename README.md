@@ -21,7 +21,7 @@ This system is a "generalist" that is also a "master-of-all-specialists" by havi
 **4. 📁 Repository Structure**
 ```
 /archon_repo
-├── .env.sample                 # <- MASTER SECRETS (DB passwords, API keys, Master Key)
+├── .env.sample               # <- MASTER SECRETS (DB passwords, API keys, Master Key)
 ├── docker-compose.yml        # <- MASTER BLUEPRINT (Defines 14+ services)
 ├── Dockerfile                # <- Builds the main 'archon-app' container
 ├── Dockerfile.vpn            # <- Builds the 'openvpn-client' sidecar
