@@ -1,4 +1,5 @@
-Archon: The Autonomous FOSS Agent CorporationArchon is a self-hosted, autonomous, multi-agent "corporation" designed for maximum privacy, security, and scalability. It is a "generalist" coordinator (the ```archon_ceo```) that manages a "federation" of specialist crews, enabling it to perform complex, parallel tasks across all digital and physical domains.
+Archon: The Autonomous FOSS Agent Corporation 
+Archon is a self-hosted, autonomous, multi-agent "corporation" designed for maximum privacy, security, and scalability. It is a "generalist" coordinator (the ```archon_ceo```) that manages a "federation" of specialist crews, enabling it to perform complex, parallel tasks across all digital and physical domains.
 
 This is not a tool; it is an autonomous workforce.
 
