@@ -50,6 +50,7 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from imapclient import IMAPClient
+from crewai_tools import tool
 
 # --- Internal Imports ---
 # These scripts must be in the same Python path
@@ -60,9 +61,6 @@ except ImportError:
     print("CRITICAL: auth.py or db_manager.py not found.", file=sys.stderr)
     # This is a fatal error, but we allow the module to load for agent definition
     pass
-
-# --- Decorator ---
-from crewai_tools import tool
 
 # --- Global Configuration ---
 # These are loaded from Docker environment variables
@@ -1272,7 +1270,7 @@ def auth_management_tool(action: str, username: str, user_id: int) -> str:
                 cur.execute("DELETE FROM users WHERE username = %s", (username,))
                 msg = f"Account '{username}' has been permanently deleted."
             else:
-                return "Error: Unknown action. Use 'lock', 'unlock', or 'delete'."
+                return "Error: Unknown action. Use 'lock', 'unlock', 'delete'."
             
             conn.commit()
         auth.log_activity(user_id, 'auth_tool_success', msg, 'success')
