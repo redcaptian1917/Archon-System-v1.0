@@ -2,10 +2,11 @@
 # -----------------------------------------------------------------
 # ARCHON SYSTEM - MASTER TOOL LIBRARY (vFINAL)
 #
-# This is the "Armory" (the 1500-line "Monolith").
-# It is the single, definitive source of truth for all 40+ tools.
+# This file contains ALL (40+) tools for the Archon Agent
+# and all its specialist crews. It is the "Armory."
 #
-# This file is imported by `archon_ceo.py` and all specialist crews.
+# This file is the single, definitive source of truth for all agent capabilities.
+# It is imported by `archon_ceo.py` and all specialist crews.
 # -----------------------------------------------------------------
 
 import json
@@ -57,7 +58,8 @@ try:
     import db_manager
 except ImportError:
     print("CRITICAL: auth.py or db_manager.py not found.", file=sys.stderr)
-    sys.exit(1)
+    # This is a fatal error, but we allow the module to load for agent definition
+    pass
 
 # --- Decorator ---
 from crewai_tools import tool
@@ -128,23 +130,27 @@ def _send_agent_request(endpoint: str, payload: dict, is_hardware: bool = False)
 # ---
 
 def _get_twilio_client(user_id: int) -> Client:
-    creds_json = get_secure_credential_tool('twilio_api', user_id)
+    """Helper: Gets Twilio credentials and returns an authenticated client."""
+    # We must call the tool's function logic directly
+    creds_json = get_secure_credential_tool(service_name='twilio_api', user_id=user_id)
     if 'Error' in creds_json: 
         raise Exception("Twilio API credentials ('twilio_api') not found.")
     creds = json.loads(creds_json)
     return Client(creds['username'], creds['password'])
 
 def _get_twilio_number(user_id: int) -> str:
-    num_json = get_secure_credential_tool('twilio_phone_number', user_id)
+    """Helper: Gets the 'from' number."""
+    num_json = get_secure_credential_tool(service_name='twilio_phone_number', user_id=user_id)
     if 'Error' in num_json: 
         raise Exception("Twilio phone number ('twilio_phone_number') not found.")
     return json.loads(num_json)['password']
 
 def _get_email_servers(service_name: str):
+    """Helper: Returns (imap_host, smtp_host, smtp_port) for a service."""
     service_name = service_name.lower()
     if 'gmail' in service_name: 
         return 'imap.gmail.com', 'smtp.gmail.com', 587
-    if 'outlook' in service_name: 
+    if 'outlook' in service_name or 'hotmail' in service_name: 
         return 'outlook.office365.com', 'smtp.office365.com', 587
     # Default for private servers
     try:
@@ -175,7 +181,7 @@ def _queue_comfy_prompt(prompt_workflow: dict) -> dict:
 
 def _gvm_connect(user_id):
     """Helper: Connects to GVM and returns the Gmp protocol object."""
-    creds_json = get_secure_credential_tool("gvm_admin", user_id)
+    creds_json = get_secure_credential_tool(service_name="gvm_admin", user_id=user_id)
     if 'Error' in creds_json:
         raise Exception(f"GVM credentials 'gvm_admin' not found.")
     creds = json.loads(creds_json)
@@ -191,7 +197,7 @@ def _gvm_connect(user_id):
 # ----------------------------------------
 
 @tool("Delegate to Specialist Crew")
-def delegate_to_crew(task_description: str, crew_name: str, user_id: int) -> str:
+def delegate_to_crew(task_description: str, crew_name: str, user_id: int, **kwargs) -> str:
     """
     Delegates a task to a specialist crew (e.g., 'coding_crew').
     The crew name must exist in the central registry.
@@ -374,7 +380,7 @@ def external_llm_tool(service_name: str, prompt: str, user_id: int) -> str:
         if 'claude' in service_name: api_key_name = 'api_anthropic'
         if 'grok' in service_name: api_key_name = 'api_grok'
         
-        creds_json = get_secure_credential_tool(api_key_name, user_id)
+        creds_json = get_secure_credential_tool(service_name=api_key_name, user_id=user_id)
         if 'Error' in creds_json: 
             return creds_json
         api_key = json.loads(creds_json)['password']
@@ -1121,7 +1127,7 @@ def ansible_playbook_tool(inventory_host: str, playbook_yaml: str, ssh_credentia
         if r.rc == 0:
             status, report = 'success', f"Playbook run successful.\nHost: {inventory_host}\nOK: {stats.get('ok', {}).get(inventory_host, 0)}\nChanged: {stats.get('changed', {}).get(inventory_host, 0)}\nFailed: {stats.get('failures', {}).get(inventory_host, 0)}"
         else:
-            status, report = 'failure', "Playbook run FAILED.\n"
+            status, report = 'failure', f"Playbook run FAILED.\n"
             for event in r.events:
                 if event['event'] == 'runner_on_failed':
                     report += json.dumps(event['event_data']['res'], indent=2)
@@ -1292,7 +1298,7 @@ def python_repl_tool(code: str, user_id: int) -> str:
     You can use libraries like 'numpy', 'pandas', 'scipy'.
     You MUST use a 'print()' statement to see the result.
     """
-    print(f"\n[Tool Call: python_repl_tool]")
+    print("\n[Tool Call: python_repl_tool]")
     print(f"  - CODE: \"{code}\"")
     try:
         # Use 'sys.executable' to run python in the same venv
@@ -1312,3 +1318,20 @@ def python_repl_tool(code: str, user_id: int) -> str:
         return error_msg
     except Exception as e:
         return f"Tool Error: {e}"
+
+# ----------------------------------------
+# --- SECTION 13: CORE (Internal) ---
+# ----------------------------------------
+# This is a re-definition of get_secure_credential_tool
+# to ensure it is registered as a @tool for the agent to call
+# directly, in addition to being a helper.
+
+@tool("Get Secure Credential Tool")
+def get_secure_credential_tool_wrapper(service_name: str, user_id: int) -> str:
+    """
+    Retrieves a secure credential from the database.
+    - service_name: The name of the service (e.g., 'twilio_api', 'admin_phone').
+    - user_id: The user_id for logging.
+    Returns a JSON string: {"username": "...", "password": "..."}
+    """
+    return get_secure_credential_tool(service_name, user_id)
