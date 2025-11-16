@@ -2,11 +2,10 @@
 # -----------------------------------------------------------------
 # ARCHON SYSTEM - MASTER TOOL LIBRARY (vFINAL)
 #
-# This file contains ALL (40+) tools for the Archon Agent
-# and all its specialist crews. It is the "Armory."
+# This is the "Armory" (the 1500-line "Monolith").
+# It is the single, definitive source of truth for all 40+ tools.
 #
-# This file is the single source of truth for all agent capabilities.
-# It is imported by `archon_ceo.py` and all specialist crews.
+# This file is imported by `archon_ceo.py` and all specialist crews.
 # -----------------------------------------------------------------
 
 import json
@@ -53,14 +52,12 @@ from imapclient import IMAPClient
 
 # --- Internal Imports ---
 # These scripts must be in the same Python path
-# (or handled by the Docker environment)
 try:
     import auth
     import db_manager
 except ImportError:
     print("CRITICAL: auth.py or db_manager.py not found.", file=sys.stderr)
-    # This is a fatal error, but we allow the module to load for agent definition
-    pass
+    sys.exit(1)
 
 # --- Decorator ---
 from crewai_tools import tool
@@ -132,19 +129,23 @@ def _send_agent_request(endpoint: str, payload: dict, is_hardware: bool = False)
 
 def _get_twilio_client(user_id: int) -> Client:
     creds_json = get_secure_credential_tool('twilio_api', user_id)
-    if 'Error' in creds_json: raise Exception("Twilio API credentials ('twilio_api') not found.")
+    if 'Error' in creds_json: 
+        raise Exception("Twilio API credentials ('twilio_api') not found.")
     creds = json.loads(creds_json)
     return Client(creds['username'], creds['password'])
 
 def _get_twilio_number(user_id: int) -> str:
     num_json = get_secure_credential_tool('twilio_phone_number', user_id)
-    if 'Error' in num_json: raise Exception("Twilio phone number ('twilio_phone_number') not found.")
+    if 'Error' in num_json: 
+        raise Exception("Twilio phone number ('twilio_phone_number') not found.")
     return json.loads(num_json)['password']
 
 def _get_email_servers(service_name: str):
     service_name = service_name.lower()
-    if 'gmail' in service_name: return 'imap.gmail.com', 'smtp.gmail.com', 587
-    if 'outlook' in service_name: return 'outlook.office365.com', 'smtp.office365.com', 587
+    if 'gmail' in service_name: 
+        return 'imap.gmail.com', 'smtp.gmail.com', 587
+    if 'outlook' in service_name: 
+        return 'outlook.office365.com', 'smtp.office365.com', 587
     # Default for private servers
     try:
         domain = service_name.split('@')[-1]
@@ -335,6 +336,8 @@ def transcribe_audio_tool(audio_path: str, user_id: int) -> str:
     try:
         result = WHISPER_MODEL.transcribe(audio_path, fp16=False) # fp16=False for CPU
         transcribed_text = result["text"]
+        if not transcribed_text:
+            return "No speech detected."
         auth.log_activity(user_id, 'transcribe_success', f"Transcribed {audio_path}", 'success')
         return f"Transcribed text: {transcribed_text}"
     except Exception as e:
@@ -372,7 +375,8 @@ def external_llm_tool(service_name: str, prompt: str, user_id: int) -> str:
         if 'grok' in service_name: api_key_name = 'api_grok'
         
         creds_json = get_secure_credential_tool(api_key_name, user_id)
-        if 'Error' in creds_json: return creds_json
+        if 'Error' in creds_json: 
+            return creds_json
         api_key = json.loads(creds_json)['password']
 
         http_client = requests.Session()
@@ -408,7 +412,8 @@ def learn_fact_tool(fact: str, importance: int = 50, do_not_delete: bool = False
     print(f"\n[Tool Call: learn_fact_tool] FACT: \"{fact[:50]}...\"")
     try:
         embedding = get_embedding(fact)
-        if embedding is None: return "Error: Could not generate embedding."
+        if embedding is None: 
+            return "Error: Could not generate embedding."
         conn = db_manager.db_connect()
         register_vector(conn)
         with conn.cursor() as cur:
@@ -429,7 +434,8 @@ def recall_facts_tool(query: str, user_id: int) -> str:
     print(f"\n[Tool Call: recall_facts_tool] QUERY: \"{query}\"")
     try:
         query_embedding = get_embedding(query)
-        if query_embedding is None: return "Error: Could not generate query embedding."
+        if query_embedding is None: 
+            return "Error: Could not generate query embedding."
         conn = db_manager.db_connect()
         register_vector(conn)
         with conn.cursor() as cur:
@@ -460,7 +466,7 @@ def recall_facts_tool(query: str, user_id: int) -> str:
 @tool("Get Stale Facts Tool")
 def get_stale_facts_tool(older_than_days: int = 90, max_importance: int = 49, user_id: int = None) -> str:
     """Finds 'stale' facts that are candidates for summarization and deletion."""
-    print(f"\n[Tool Call: get_stale_facts_tool]")
+    print("\n[Tool Call: get_stale_facts_tool]")
     try:
         conn = db_manager.db_connect()
         with conn.cursor() as cur:
@@ -470,7 +476,8 @@ def get_stale_facts_tool(older_than_days: int = 90, max_importance: int = 49, us
             )
             results = cur.fetchall()
         conn.close()
-        if not results: return "No stale facts found."
+        if not results: 
+            return "No stale facts found."
         facts = [{"id": fid, "text": ftext} for fid, ftext in results]
         return json.dumps(facts)
     except Exception as e:
@@ -479,7 +486,7 @@ def get_stale_facts_tool(older_than_days: int = 90, max_importance: int = 49, us
 @tool("Summarize Facts Tool")
 def summarize_facts_tool(facts_to_summarize: str, user_id: int) -> str:
     """Takes a JSON list of facts and condenses them into a single, high-density summary."""
-    print(f"\n[Tool Call: summarize_facts_tool]")
+    print("\n[Tool Call: summarize_facts_tool]")
     try:
         client = ollama.Client(host=OLLAMA_HOST)
         prompt = (f"You are a memory summarization AI. Condense the following old facts into a single, high-density paragraph. If the facts are noise, respond with 'None'.\n\nFACTS:\n{facts_to_summarize}")
@@ -520,10 +527,14 @@ def vpn_control_tool(action: str, user_id: int) -> str:
     try:
         client = docker.from_env()
         vpn_container = client.containers.get('archon-vpn')
-        if action == 'connect': cmd = "protonvpn-cli connect -f"
-        elif action == 'disconnect': cmd = "protonvpn-cli disconnect"
-        elif action == 'status': cmd = "protonvpn-cli status"
-        else: return "Error: Unknown VPN action."
+        if action == 'connect': 
+            cmd = "protonvpn-cli connect -f"
+        elif action == 'disconnect': 
+            cmd = "protonvpn-cli disconnect"
+        elif action == 'status': 
+            cmd = "protonvpn-cli status"
+        else: 
+            return "Error: Unknown VPN action."
         
         exit_code, output = vpn_container.exec_run(cmd)
         result = output.decode('utf-8')
@@ -540,7 +551,8 @@ def execute_via_proxy_tool(command_to_run: str, proxy_chain: list, user_id: int)
     config_content = "[ProxyList]\n" + "\n".join(proxy_chain)
     try:
         # We must write this *inside* the container, so /tmp is fine.
-        with open(config_path, 'w') as f: f.write(config_content)
+        with open(config_path, 'w') as f: 
+            f.write(config_content)
         full_cmd = f"proxychains4 -f {config_path} {command_to_run}"
         
         # We must use subprocess directly here, *not* secure_cli_tool,
@@ -565,18 +577,22 @@ def execute_via_proxy_tool(command_to_run: str, proxy_chain: list, user_id: int)
     except Exception as e:
         return f"Error executing via proxy: {e}"
     finally:
-        if os.path.exists(config_path): os.remove(config_path)
+        if os.path.exists(config_path): 
+            os.remove(config_path)
 
 @tool("Network Interface Tool")
 def network_interface_tool(action: str, interface: str = None, user_id: int = None) -> str:
     """Manages network interfaces on the host ('list', 'mac_randomize')."""
     print(f"\n[Tool Call: network_interface_tool] ACTION: {action}")
     # This tool calls the *worker* agent, as the host interfaces are there.
-    if action == 'list': cmd = "nmcli device status"
+    if action == 'list': 
+        cmd = "nmcli device status"
     elif action == 'mac_randomize':
-        if not interface: return "Error: 'mac_randomize' action requires an 'interface'."
+        if not interface: 
+            return "Error: 'mac_randomize' action requires an 'interface'."
         cmd = f"macchanger -r {interface}"
-    else: return "Error: Unknown action."
+    else: 
+        return "Error: Unknown action."
     
     # We use secure_cli_tool to run this on the *worker*
     result = secure_cli_tool(cmd, user_id)
@@ -612,7 +628,8 @@ def read_emails_tool(email_service_name: str, folder: str = 'INBOX', criteria: s
     print(f"\n[Tool Call: read_emails_tool] SERVICE: {email_service_name}")
     try:
         creds_json = get_secure_credential_tool(email_service_name, user_id)
-        if 'Error' in creds_json: return creds_json
+        if 'Error' in creds_json: 
+            return creds_json
         creds = json.loads(creds_json)
         imap_server, _, _ = _get_email_servers(creds['username'])
         
@@ -620,7 +637,8 @@ def read_emails_tool(email_service_name: str, folder: str = 'INBOX', criteria: s
             client.login(creds['username'], creds['password'])
             client.select_folder(folder, readonly=False)
             message_uids = client.search(criteria)
-            if not message_uids: return "No new emails found."
+            if not message_uids: 
+                return "No new emails found."
             
             fetched_emails = []
             for uid, data in client.fetch(message_uids[-5:], ['ENVELOPE', 'BODY[TEXT]']).items():
@@ -642,7 +660,8 @@ def send_email_tool(email_service_name: str, to_email: str, subject: str, body: 
     print(f"\n[Tool Call: send_email_tool] TO: {to_email}")
     try:
         creds_json = get_secure_credential_tool(email_service_name, user_id)
-        if 'Error' in creds_json: return creds_json
+        if 'Error' in creds_json: 
+            return creds_json
         creds = json.loads(creds_json)
         from_email, password = creds['username'], creds['password']
         _, smtp_server, smtp_port = _get_email_servers(creds['username'])
@@ -738,34 +757,44 @@ class BrowserSession:
             return f"Error stopping browser: {e}"
 
     def navigate(self, url: str):
-        if not self.driver: return "Error: Browser not started."
+        if not self.driver: 
+            return "Error: Browser not started."
         try:
             self.driver.get(url)
             return f"Navigated to {url}. Current page title: {self.driver.title}"
-        except Exception as e: return f"Error navigating: {e}"
+        except Exception as e: 
+            return f"Error navigating: {e}"
 
     def fill_form(self, selector: str, text: str):
-        if not self.driver: return "Error: Browser not started."
+        if not self.driver: 
+            return "Error: Browser not started."
         try:
             element = self.driver.find_element(By.CSS_SELECTOR, selector)
-            element.clear(); element.send_keys(text)
+            element.clear()
+            element.send_keys(text)
             return f"Filled element '{selector}'."
-        except Exception as e: return f"Error filling form: {e}"
+        except Exception as e: 
+            return f"Error filling form: {e}"
 
     def click_element(self, selector: str):
-        if not self.driver: return "Error: Browser not started."
+        if not self.driver: 
+            return "Error: Browser not started."
         try:
             element = self.driver.find_element(By.CSS_SELECTOR, selector)
-            element.click(); time.sleep(2) # Wait for page reaction
+            element.click()
+            time.sleep(2) # Wait for page reaction
             return f"Clicked element '{selector}'."
-        except Exception as e: return f"Error clicking element: {e}"
+        except Exception as e: 
+            return f"Error clicking element: {e}"
 
     def read_page(self):
-        if not self.driver: return "Error: Browser not started."
+        if not self.driver: 
+            return "Error: Browser not started."
         try:
             body = self.driver.find_element(By.TAG_NAME, 'body')
             return body.text[:4000] # Return first 4000 chars
-        except Exception as e: return f"Error reading page: {e}"
+        except Exception as e: 
+            return f"Error reading page: {e}"
 
 @tool("Start Browser Tool")
 def start_browser_tool(user_id: int) -> str:
@@ -780,7 +809,8 @@ def start_browser_tool(user_id: int) -> str:
 def stop_browser_tool(user_id: int) -> str:
     """Stops and closes the browser session."""
     global browser_session
-    if not browser_session: return "Browser not running."
+    if not browser_session: 
+        return "Browser not running."
     auth.log_activity(user_id, 'browser_stop', 'Stopping browser', 'success')
     result = browser_session.stop_browser()
     browser_session = None # Ensure it's fully reset
@@ -789,28 +819,32 @@ def stop_browser_tool(user_id: int) -> str:
 @tool("Navigate URL Tool")
 def navigate_url_tool(url: str, user_id: int) -> str:
     """Navigates the browser to a specific URL."""
-    if not browser_session: return "Error: Browser not started. Use 'start_browser_tool' first."
+    if not browser_session: 
+        return "Error: Browser not started. Use 'start_browser_tool' first."
     auth.log_activity(user_id, 'browser_navigate', f"Nav to {url}", 'success')
     return browser_session.navigate(url)
 
 @tool("Fill Form Tool")
 def fill_form_tool(selector: str, text: str, user_id: int) -> str:
     """Fills a form field with text, identified by a CSS selector."""
-    if not browser_session: return "Error: Browser not started."
+    if not browser_session: 
+        return "Error: Browser not started."
     auth.log_activity(user_id, 'browser_fill', f"Filling {selector}", 'success')
     return browser_session.fill_form(selector, text)
 
 @tool("Click Element Tool")
 def click_element_tool(selector: str, user_id: int) -> str:
     """Clicks a button or link, identified by a CSS selector."""
-    if not browser_session: return "Error: Browser not started."
+    if not browser_session: 
+        return "Error: Browser not started."
     auth.log_activity(user_id, 'browser_click', f"Clicking {selector}", 'success')
     return browser_session.click_element(selector)
 
 @tool("Read Page Text Tool")
 def read_page_text_tool(user_id: int) -> str:
     """Reads all visible text from the current webpage."""
-    if not browser_session: return "Error: Browser not started."
+    if not browser_session: 
+        return "Error: Browser not started."
     auth.log_activity(user_id, 'browser_read', 'Reading page text', 'success')
     return browser_session.read_page()
 
@@ -863,7 +897,8 @@ def text_to_speech_tool(text: str, output_path: str, user_id: int) -> str:
         response = requests.get(f"{COQUI_TTS_URL}/api/tts", params={'text': text}, timeout=120)
         response.raise_for_status()
         full_path = f"/app/outputs/coqui/{output_path}" # Use mounted dir
-        with open(full_path, 'wb') as f: f.write(response.content)
+        with open(full_path, 'wb') as f: 
+            f.write(response.content)
         auth.log_activity(user_id, 'tts_gen', f"Text: {text[:30]}...", 'success')
         return f"Success: Audio file generated and saved to {full_path}"
     except Exception as e:
@@ -927,7 +962,8 @@ def get_scan_report_tool(task_id: str, user_id: int) -> str:
                     results.append({"name": name, "host": host, "port": port, "severity": float(severity)})
             
             auth.log_activity(user_id, 'gvm_get_report', f"Got report for {task_id}", 'success')
-            if not results: return "Scan complete. No high-severity vulnerabilities found."
+            if not results: 
+                return "Scan complete. No high-severity vulnerabilities found."
             return f"Scan complete. Found {len(results)} vulnerabilities:\n{json.dumps(results, indent=2)}"
     except Exception as e:
         return f"Error getting report: {e}"
@@ -936,7 +972,7 @@ def get_scan_report_tool(task_id: str, user_id: int) -> str:
 @tool("Update Offline Databases Tool")
 def update_offline_databases_tool(user_id: int) -> str:
     """Clones or updates the local Exploit-DB and CVE JSON database."""
-    print(f"\n[Tool Call: update_offline_databases_tool]")
+    print("\n[Tool Call: update_offline_databases_tool]")
     os.makedirs(DB_PATH, exist_ok=True)
     results = {}
     
@@ -945,18 +981,24 @@ def update_offline_databases_tool(user_id: int) -> str:
         return subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
 
     try:
-        if os.path.exists(EXPLOIT_DB_PATH): cmd = f"cd {EXPLOIT_DB_PATH} && git pull"
-        else: cmd = f"git clone https://github.com/offensive-security/exploit-database.git {EXPLOIT_DB_PATH}"
+        if os.path.exists(EXPLOIT_DB_PATH): 
+            cmd = f"cd {EXPLOIT_DB_PATH} && git pull"
+        else: 
+            cmd = f"git clone https://github.com/offensive-security/exploit-database.git {EXPLOIT_DB_PATH}"
         run_cmd(cmd)
         results['exploit_db'] = "Update/Clone successful."
-    except Exception as e: results['exploit_db'] = f"Update/Clone failed: {e}"
+    except Exception as e: 
+        results['exploit_db'] = f"Update/Clone failed: {e}"
 
     try:
-        if os.path.exists(CVE_LIST_PATH): cmd = f"cd {CVE_LIST_PATH} && git pull"
-        else: cmd = f"git clone https://github.com/CVEProject/cvelistV5.git {CVE_LIST_PATH}"
+        if os.path.exists(CVE_LIST_PATH): 
+            cmd = f"cd {CVE_LIST_PATH} && git pull"
+        else: 
+            cmd = f"git clone https://github.com/CVEProject/cvelistV5.git {CVE_LIST_PATH}"
         run_cmd(cmd)
         results['cve_list'] = "Update/Clone successful."
-    except Exception as e: results['cve_list'] = f"Update/Clone failed: {e}"
+    except Exception as e: 
+        results['cve_list'] = f"Update/Clone failed: {e}"
 
     auth.log_activity(user_id, 'db_update', json.dumps(results), 'success')
     return f"Database update complete: {json.dumps(results)}"
@@ -968,7 +1010,8 @@ def search_exploit_db_tool(query: str, user_id: int) -> str:
     cmd = f"cd {EXPLOIT_DB_PATH} && ./searchsploit --no-color -j {query}"
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     auth.log_activity(user_id, 'search_exploit_db', query, 'success')
-    if not result.stdout: return "No exploits found."
+    if not result.stdout: 
+        return "No exploits found."
     return f"Found exploits:\n{result.stdout}"
 
 @tool("Search CVE Database Tool")
@@ -976,7 +1019,8 @@ def search_cve_database_tool(cve_id: str, user_id: int) -> str:
     """Searches the offline cvelistV5 JSON database for a specific CVE ID."""
     print(f"\n[Tool Call: search_cve_database_tool] ID: {cve_id}")
     parts = cve_id.split('-')
-    if len(parts) != 3 or not parts[1].isdigit(): return "Error: Invalid CVE format."
+    if len(parts) != 3 or not parts[1].isdigit(): 
+        return "Error: Invalid CVE format."
     
     year, number_dir = parts[1], f"{parts[2][:-3]}xxx"
     json_path = os.path.join(CVE_LIST_PATH, 'cves', year, number_dir, f"{cve_id}.json")
@@ -1020,7 +1064,8 @@ def os_hardening_tool(profile: str, user_id: int) -> str:
         cmd = "sysctl -w net.ipv4.icmp_echo_ignore_all=1 && sysctl -w net.ipv4.tcp_syncookies=1"
     elif profile == "kernel_lockdown":
         cmd = "sysctl -w kernel.dmesg_restrict=1"
-    else: return "Error: Unknown hardening profile."
+    else: 
+        return "Error: Unknown hardening profile."
     result = secure_cli_tool(cmd, user_id)
     auth.log_activity(user_id, 'os_hardening', profile, 'success')
     return f"Profile '{profile}' applied: {result}"
@@ -1039,7 +1084,8 @@ def git_tool(repo_path: str, action: str, branch: str = 'main', user_id: int = N
             result_str = str(repo.remotes.origin.pull(branch)[0].flags)
         elif action == "status":
             result_str = repo.git.status()
-        else: return "Error: Unsupported Git action."
+        else: 
+            return "Error: Unsupported Git action."
         auth.log_activity(user_id, 'git_tool', f"{action} on {repo_path}", 'success')
         return result_str
     except Exception as e:
@@ -1050,7 +1096,8 @@ def ansible_playbook_tool(inventory_host: str, playbook_yaml: str, ssh_credentia
     """Executes an Ansible playbook on a remote host to provision it."""
     print(f"\n[Tool Call: ansible_playbook_tool] HOST: {inventory_host}")
     creds_json = get_secure_credential_tool(ssh_credential_name, user_id)
-    if 'Error' in creds_json: return creds_json
+    if 'Error' in creds_json: 
+        return creds_json
     creds = json.loads(creds_json)
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -1058,8 +1105,10 @@ def ansible_playbook_tool(inventory_host: str, playbook_yaml: str, ssh_credentia
             'ansible_user': creds.get('username'), 'ansible_ssh_pass': creds.get('password'),
             'ansible_ssh_common_args': '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         }}}}
-        with open(os.path.join(temp_dir, 'inventory.json'), 'w') as f: json.dump(inventory_data, f)
-        with open(os.path.join(temp_dir, 'playbook.yml'), 'w') as f: f.write(playbook_yaml)
+        with open(os.path.join(temp_dir, 'inventory.json'), 'w') as f: 
+            json.dump(inventory_data, f)
+        with open(os.path.join(temp_dir, 'playbook.yml'), 'w') as f: 
+            f.write(playbook_yaml)
 
         print(f"[AnsibleTool] Running playbook on {inventory_host}...")
         r = ansible_runner.run(
@@ -1072,7 +1121,7 @@ def ansible_playbook_tool(inventory_host: str, playbook_yaml: str, ssh_credentia
         if r.rc == 0:
             status, report = 'success', f"Playbook run successful.\nHost: {inventory_host}\nOK: {stats.get('ok', {}).get(inventory_host, 0)}\nChanged: {stats.get('changed', {}).get(inventory_host, 0)}\nFailed: {stats.get('failures', {}).get(inventory_host, 0)}"
         else:
-            status, report = 'failure', f"Playbook run FAILED.\n"
+            status, report = 'failure', "Playbook run FAILED.\n"
             for event in r.events:
                 if event['event'] == 'runner_on_failed':
                     report += json.dumps(event['event_data']['res'], indent=2)
@@ -1089,7 +1138,8 @@ def code_modification_tool(file_path: str, new_content: str, user_id: int) -> st
     if not file_path.startswith('/app'):
         return "Access Denied: Code modification is restricted to the /app directory."
     try:
-        with open(file_path, 'w') as f: f.write(new_content)
+        with open(file_path, 'w') as f: 
+            f.write(new_content)
         auth.log_activity(user_id, 'code_mod_success', f"Overwrote file {file_path}", 'success')
         return f"Success: File {file_path} updated."
     except Exception as e:
@@ -1146,8 +1196,9 @@ def add_secure_credential_tool(service_name: str, username: str, password: str, 
         auth.log_activity(user_id, 'cred_add', f"Added credential for {service_name}", 'success')
         return f"Success: Credential for {service_name} stored securely."
     except Exception as e:
-        conn.rollback()
-        conn.close()
+        if conn:
+            conn.rollback()
+            conn.close()
         return f"Error storing credential: {e}"
 
 @tool("Get Secure Credential Tool")
@@ -1191,7 +1242,7 @@ def auth_management_tool(action: str, username: str, user_id: int) -> str:
     
     # This is a dangerous tool. Double-check the user is an admin.
     admin_username = auth.get_username_from_id(user_id)
-    # You MUST change 'william' to your actual admin username
+    # You MUST change 'william' to your actual primary admin username
     if admin_username != 'william': 
         auth.log_activity(user_id, 'auth_tool_fail', f"Non-admin '{admin_username}' attempted to {action} {username}", 'failure')
         return "Error: This tool can only be run by the primary admin."
