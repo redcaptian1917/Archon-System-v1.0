@@ -50,6 +50,7 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from imapclient import IMAPClient
+import ollama # <-- FIX: Added missing import
 from crewai_tools import tool
 
 # --- Internal Imports ---
@@ -1247,6 +1248,7 @@ def auth_management_tool(action: str, username: str, user_id: int) -> str:
     # This is a dangerous tool. Double-check the user is an admin.
     admin_username = auth.get_username_from_id(user_id)
     # You MUST change 'william' to your actual primary admin username
+    # This is a hardcoded "Super Society" check.
     if admin_username != 'william': 
         auth.log_activity(user_id, 'auth_tool_fail', f"Non-admin '{admin_username}' attempted to {action} {username}", 'failure')
         return "Error: This tool can only be run by the primary admin."
@@ -1270,7 +1272,7 @@ def auth_management_tool(action: str, username: str, user_id: int) -> str:
                 cur.execute("DELETE FROM users WHERE username = %s", (username,))
                 msg = f"Account '{username}' has been permanently deleted."
             else:
-                return "Error: Unknown action. Use 'lock', 'unlock', 'delete'."
+                return "Error: Unknown action. Use 'lock', 'unlock', or 'delete'."
             
             conn.commit()
         auth.log_activity(user_id, 'auth_tool_success', msg, 'success')
@@ -1296,40 +1298,3 @@ def python_repl_tool(code: str, user_id: int) -> str:
     You can use libraries like 'numpy', 'pandas', 'scipy'.
     You MUST use a 'print()' statement to see the result.
     """
-    print("\n[Tool Call: python_repl_tool]")
-    print(f"  - CODE: \"{code}\"")
-    try:
-        # Use 'sys.executable' to run python in the same venv
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=60
-        )
-        output = result.stdout
-        auth.log_activity(user_id, 'python_repl', f"Code executed: {code}", 'success')
-        return f"Execution successful. Output:\n{output}"
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Python Error:\n{e.stderr}"
-        auth.log_activity(user_id, 'python_repl', f"Code failed: {code}", error_msg)
-        return error_msg
-    except Exception as e:
-        return f"Tool Error: {e}"
-
-# ----------------------------------------
-# --- SECTION 13: CORE (Internal) ---
-# ----------------------------------------
-# This is a re-definition of get_secure_credential_tool
-# to ensure it is registered as a @tool for the agent to call
-# directly, in addition to being a helper.
-
-@tool("Get Secure Credential Tool")
-def get_secure_credential_tool_wrapper(service_name: str, user_id: int) -> str:
-    """
-    Retrieves a secure credential from the database.
-    - service_name: The name of the service (e.g., 'twilio_api', 'admin_phone').
-    - user_id: The user_id for logging.
-    Returns a JSON string: {"username": "...", "password": "..."}
-    """
-    return get_secure_credential_tool(service_name, user_id)
